@@ -133,5 +133,22 @@ class TensoRFCP(TensoRFBase):
     
     def TV_loss_appearance(self, reg):
         return self._TV_loss_line(reg, self.appearance_line)
+
+    @torch.no_grad()
+    def up_sampling_Vector(self, density_line_coef, appearance_line_coef, resolution_target):
+
+        for i in range(len(self.vec_operations_order)):
+            vec_id = self.vec_operations_order[i]
+            density_line_coef[i] = torch.nn.Parameter(
+                F.interpolate(density_line_coef[i].data, size=(resolution_target[vec_id], 1), mode='bilinear', align_corners=True))
+            appearance_line_coef[i] = torch.nn.Parameter(
+                F.interpolate(appearance_line_coef[i].data, size=(resolution_target[vec_id], 1), mode='bilinear', align_corners=True))
+
+        return density_line_coef, appearance_line_coef
     
+    @torch.no_grad()
+    def upsample_volume_grid(self, res_target):
+        self.density_line, self.appearance_line = self.up_sampling_Vector(self.density_line, self.appearance_line, res_target)
+        self.update_step_size(res_target)
+        print(f'upsamping to {res_target}')
         

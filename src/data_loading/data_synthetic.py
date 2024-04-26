@@ -125,24 +125,36 @@ class SyntheticSet(Dataset):
     def __init__(self, item_name = DATA_FOLDERS[0], item_index = -1, split='train', test_skip = 1, half_resolution = False):
         self.split = split
         images, poses, rays, render_poses, directions, intrinsics, [height, width, focal], index_splits = load_synthetic(item_name if item_index < 0 or item_index >= len(DATA_FOLDERS) else DATA_FOLDERS[item_index], test_skip, half_resolution)
+        # Main data
         self.images = images
         self.poses = poses
         self.rays = rays
         self.render_poses = render_poses
         self.directions = directions
         self.instrinsics = intrinsics
+
+        # Parameters
+        self.batch_size = 4096
+
+        # Basic values
         self.height = height
         self.width = width
         self.focal = focal
+
+        # Training split indeces
         self.index_splits = index_splits
         self.train_indeces = index_splits[0]
         self.test_indeces = index_splits[1]
         self.val_indeces = index_splits[2]
+
+        # Scene variables
+        self.white_bg = True
         self.hemi_r = np.mean(np.linalg.norm(poses[:, :3, -1], axis=-1))
         self.near = self.hemi_r - 1.0
         self.far = self.hemi_r + 1.0
-        self.white_bg = True
-
+        self.scene_bounding_box = torch.tensor([[-1.5, -1.5, -1.5], [1.5, 1.5, 1.5]])
+        self.center = torch.mean(self.scene_bounding_box, axis=0).float().view(1, 1, 3)
+        self.radius = (self.scene_bounding_box[1] - self.center).float().view(1, 1, 3)
         
 
     def __len__(self):

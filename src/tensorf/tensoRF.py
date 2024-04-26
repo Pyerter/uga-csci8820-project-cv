@@ -222,6 +222,16 @@ class TensoRFBase(Module):
     
     def get_optional_parameter_groups(self, lr_init_spatial = 0.02, lr_init_network = 0.001):
         pass
+    
+    def can_compute_vector_component_diffs(self):
+        return False
+
+    def vector_component_diffs(self):
+        pass
+
+    @torch.no_grad()
+    def upsample_volume_grid(self):
+        pass
 
     def get_kwargs(self):
         return {
@@ -296,6 +306,47 @@ class TensoRFBase(Module):
         external_mask = ((ray_samples < self.bb[0]) | (ray_samples > self.bb[1])).any(dim=-1)
         # Return positions, interpolations, and the opposte of the mask containing rays outside the bounding box
         return ray_samples, interpolated_distances, ~external_mask
+    
+    def filter_rays(self, rays, images, numb_samples, chunk=10240*5, bb_only = False):
+        numb_rays = torch.tensor(rays.shape[:-1]).prod() # Calculate number of rays
+        masks_filtered = [] # Store filtered masks for each chunk
+
+        index_chunks = torch.split(torch.arange(numb_rays), chunk) # Process indeces in batches
+        for index_chunk in index_chunks:
+            # Fetch rays from chunk
+            ray_chunk = rays[index_chunk].to(self.device)
+            # Get origin and directions of rays
+            ray_origins, ray_directions = ray_chunk[..., :3], ray_chunk[..., 3:6]
+
+            # If only in bounding box, filter by bounding box intersection
+            if bb_only:
+                # Make 0s just barely not 0 to avoid divide by zero error
+                vec = torch.where(ray_directions == 0, torch.full_like(ray_directions, 1e-6), ray_directions)
+                # Calculate intersection of points of rays using bounding box
+                rate_a = (self.bb[1] - ray_origins) / vec
+                rate_b = (self.bb[0] - ray_origins) / vec
+                t_min = torch.minimum(rate_a, rate_b).amax(-1)
+                t_max = torch.maximum(rate_a, rate_b).amin(-1)
+                # # Create positive masks for rays inside bounding box
+                mask_in_bb = t_max > t_min
+
+            # Otherwise, filter rays based on alpha mask
+            else:
+                # Sample points along the rays and evaluate alpha mask
+                positions, _, _ = self.sample_ray(ray_origins, ray_directions, False)
+                mask_in_bb = (self.alpha_mask.sample_alpha(positions).view(positions.shape[:-1]) > 0).any(-1)
+
+            # Store for later
+            masks_filtered.append(mask_in_bb.cpu())
+
+        # Concatenate masks in list
+        masks_filtered = torch.cat(masks_filtered).view(images.shape[:-1])
+
+        # Filter by the mask
+        filtered_rays = rays[masks_filtered]
+        filtered_images = images[masks_filtered]
+
+        return filtered_rays, filtered_images
 
     def feature_to_density_compute(self, density_features):
         if self.feature_density_act_funct == 'softplus':
