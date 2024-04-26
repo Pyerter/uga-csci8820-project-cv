@@ -52,11 +52,19 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
     meta_data = {}
     # Get meta data for each split
     for split in splits:
-        with open(os.path.join(base_dir, norm_path_from_base(f'{item_name}/transforms_{split}.json')), 'r') as f:
+        with open(os.path.join(base_dir, norm_path(f'{item_name}/transforms_{split}.json')), 'r') as f:
             meta_data[split] = json.load(f)
 
-    # Get height, width from image
-    height, width = images[0].shape[:2]
+    #print(meta_data)
+    for split in splits:
+        meta = meta_data[split]
+        for frame in meta['frames'][::]:
+            frame_path = os.path.join(base_dir, norm_path(f"{item_name}/{frame['file_path']}.png"))
+            current_image = imageio.imread(frame_path)
+            # Get height, width from image
+            height, width = current_image.shape[:2]
+            break
+        break
     # Camera angle
     camera_angle_x = float(meta['camera_angle_x'])
     # Focal length
@@ -81,15 +89,18 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
         skip = 1 if split == 'train' or test_skip == 0 else test_skip
         # Collect and read image and poses
         for frame in meta['frames'][::skip]:
-            frame_path = os.path.join(base_dir, norm_path(frame['file_path'] + '.png'))
+            frame_path = os.path.join(base_dir, norm_path(f"{item_name}/{frame['file_path']}.png"))
             current_images.append(imageio.imread(frame_path))
+            print(f'Shape of image: {current_images[-1].shape}')
             pose = torch.FloatTensor(np.array(frame['transform_matrix']) @ synth_to_opencv) 
+            print(f'Shape of pose: {pose.shape}')
             current_poses.append(pose)
             ray_origin, ray_direction = get_rays(directions, pose)
             current_rays.append(torch.cat([ray_origin, ray_direction], 1))
         # Store as RGBA np array
         current_images = (np.array(current_images) / 255.0).astype(np.float32) 
         # Store as np array
+        print(f'Length of poses: {len(current_poses)}')
         current_poses = np.array(current_poses).astype(np.float32)
         # Store as np array
         current_rays = np.array(current_rays).astype(np.float32)

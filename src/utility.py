@@ -1,6 +1,6 @@
 import os
 
-BASE_DIR = 'C:/Coding Projects/uga-csci8820-project-cv'
+BASE_DIR = '/home/psquires/Projects/uga-csci8820-project-cv'
 BASE_SEP = '/'
 
 def norm_path(path: str, separator:str=BASE_SEP, prepend:bool=False, append:bool=False) -> str:

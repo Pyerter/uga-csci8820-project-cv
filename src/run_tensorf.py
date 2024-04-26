@@ -16,8 +16,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def get_checkpoint_folder(checkpoint_folder_name, subfolder_name = None):
     if subfolder_name is None:
-        return norm_path_from_base(checkpoint_folder_name)
-    return norm_path_from_base(f'{checkpoint_folder_name}/{subfolder_name}')
+        return norm_path_from_base(f'checkpoints/{checkpoint_folder_name}')
+    return norm_path_from_base(f'checkpoints/{checkpoint_folder_name}/{subfolder_name}')
 
 def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
     train_dataset = SyntheticSet(DATA_FOLDERS[0], split='train')
