@@ -92,15 +92,21 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
             frame_path = os.path.join(base_dir, norm_path(f"{item_name}/{frame['file_path']}.png"))
             current_images.append(imageio.imread(frame_path))
             print(f'Shape of image: {current_images[-1].shape}')
-            pose = torch.FloatTensor(np.array(frame['transform_matrix']) @ synth_to_opencv) 
-            print(f'Shape of pose: {pose.shape}')
-            current_poses.append(pose)
+            pose = torch.FloatTensor(np.array(frame['transform_matrix']) @ synth_to_opencv)
+            current_poses.append(np.array(pose)[np.newaxis, :, :])
+            print(f'Shape of pose: {current_poses[-1].shape}')
             ray_origin, ray_direction = get_rays(directions, pose)
-            current_rays.append(torch.cat([ray_origin, ray_direction], 1))
+            current_rays.append(np.array(torch.cat([ray_origin, ray_direction], 1))[np.newaxis, :, :])
         # Store as RGBA np array
         current_images = (np.array(current_images) / 255.0).astype(np.float32) 
         # Store as np array
         print(f'Length of poses: {len(current_poses)}')
+        pose_shape = None
+        for pose in current_poses:
+            if pose_shape == None: pose_shape = pose.shape
+            elif pose_shape != pose.shape: print(f'Found pose that does not obey shape pattern of {pose_shape}: {pose.shape}')
+        print(f'Finished scanning shapes to make sure they match: {pose_shape}')
+
         current_poses = np.array(current_poses).astype(np.float32)
         # Store as np array
         current_rays = np.array(current_rays).astype(np.float32)
