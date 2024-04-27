@@ -1,6 +1,6 @@
+import torch
 import torch.nn.functional as F
 from torch.nn import Parameter, ParameterList, Linear, Module
-import torch
 
 from .tensoRF import TensoRFBase
 
@@ -8,6 +8,8 @@ from .tensoRF import TensoRFBase
 class TensoRFCP(TensoRFBase):
     def __init__(self, bb, grid_size, device, **kargs):
         super(TensoRFCP, self).__init__(bb, grid_size, device, **kargs)
+
+        self.init_svd_volume(self.grid_size[0], device) # Initialize singular value decomposition (if implemented)
         
     # Initialize the singular value decomposition volume (SVD volume)
     def init_svd_volume(self, res, device):

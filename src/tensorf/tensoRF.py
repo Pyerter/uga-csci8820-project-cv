@@ -1,6 +1,6 @@
 import numpy as np
 import torch.nn.functional as F
-from torch.nn import Module, Linear, Sequential, ReLU
+from torch.nn import Linear, Sequential, ReLU
 from torch import LongTensor
 import torch
 
@@ -38,7 +38,7 @@ def SHRender(positions, view_directions, features):
     #out = torch.relu(torch.sum(sh_mult * out, dim=-1) + 0.5)
     #return out
 
-class AlphaGridMask(Module):
+class AlphaGridMask(torch.nn.Module):
     def __init__(self, device, bb, alpha_volume):
         super(AlphaGridMask, self).__init__()
         self.device = device # save device
@@ -62,8 +62,9 @@ class AlphaGridMask(Module):
 
 # Represents a torch module that functions, by default, as a multi layer
 # perceptron with positional encodings.
-class RenderModule(Module):
+class RenderModule(torch.nn.Module):
     def __init__(self, in_channels, view_posenc = 6, pos_posenc = -1, feature_posenc = -1, feature_count = 128):
+        super(RenderModule, self).__init__()
         # In multilayer perceptron count is equal to in channels plus additional positional encoding
         # channels, calculated as 3 + 2 * encoding * 3, simplified to 3 * (1 + 2 * view_posenc).
         # One channel is a regular 3D grid, One channel is the geometry grid, one channel is the appearance grid:
@@ -116,15 +117,16 @@ class RenderModule(Module):
 # The base class for both TensoRF-CP and TensoRF-VM.
 # Both classes have many similarities, so it's easy to base them off
 # of a single class.
-class TensoRFBase(Module):
+class TensoRFBase(torch.nn.Module):
     def __init__(self, bb, grid_size, device, **kwargs):
+        super(TensoRFBase, self).__init__()
 
         self.bb = bb # The axis-aligned bounding box
         self.grid_size = grid_size # The size of the tensor grid
         self.device = device # Device that performs tensor operations
 
-        self.numb_density_comps  = 8 # Number of components used for the density representation
-        self.numb_appearance_comps = 24 # Number of components used for the appearance representation
+        self.numb_density_comps  = [16, 16, 16] # Number of components used for the density representation
+        self.numb_appearance_comps = [24, 24, 24] # Number of components used for the appearance representation
         self.appearance_dims = 27 # Dimensionality of the appearance
         self.numb_features = 128 # Number of features
 
@@ -153,8 +155,6 @@ class TensoRFBase(Module):
         self.comp_weights = [1, 1, 1] # The weights across the components
 
         self.update_step_size(self.grid_size) # Update the step size
-
-        self.init_svd_volume(self.grid_size[0], device) # Initialize singular value decomposition (if implemented)
 
         # Select the function that takes a feature vector and viewing direction to compute a color
 
@@ -307,7 +307,7 @@ class TensoRFBase(Module):
         # Return positions, interpolations, and the opposte of the mask containing rays outside the bounding box
         return ray_samples, interpolated_distances, ~external_mask
     
-    def filter_rays(self, rays, images, numb_samples, chunk=10240*5, bb_only = False):
+    def filter_rays(self, rays, images, chunk=10240*5, bb_only = False):
         numb_rays = torch.tensor(rays.shape[:-1]).prod() # Calculate number of rays
         masks_filtered = [] # Store filtered masks for each chunk
 

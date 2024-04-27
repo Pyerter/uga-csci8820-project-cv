@@ -22,7 +22,6 @@ def get_checkpoint_folder(checkpoint_folder_name, subfolder_name = None):
 def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
     train_dataset = SyntheticSet(DATA_FOLDERS[0], split='train')
     test_dataset = SyntheticSet(DATA_FOLDERS[0], split='test')
-    model = TensoRFCP()
 
     # Initialize and create checkpoint folders for this run
     checkpoint_folder_name = f'{checkpoint_name}{datetime.datetime.now().strftime("-%Y%m%d-%H%M%S")}'
@@ -34,8 +33,10 @@ def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
 
     scene_bb = train_dataset.scene_bounding_box
     resolution = voxel_number_to_resolution(2097156, scene_bb) # 128^3 = 2,097,156 voxels in 128 cubic grid
-    number_samples = min(model.number_samples, int(np.linalg.norm(resolution)/model.step_ratio))
+    number_samples = min(train_dataset.number_samples, int(np.linalg.norm(resolution)/train_dataset.step_ratio))
     upsample_list = [2000,3000,4000,5500,7000]
+
+    model = TensoRFCP(scene_bb, resolution, device)
 
     lr_initial = 0.02
     lr_basis = 0.001
