@@ -1,6 +1,5 @@
 import os
 import json
-import imageio
 import numpy as np
 from PIL import Image
 
@@ -65,9 +64,9 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
         meta = meta_data[split]
         for frame in meta['frames'][::]:
             frame_path = os.path.join(base_dir, norm_path(f"{item_name}/{frame['file_path']}.png"))
-            current_image = imageio.imread(frame_path)
+            current_image = Image.open(frame_path)
             # Get height, width from image
-            height, width = current_image.shape[:2]
+            height, width = current_image.height, current_image.width
             break
         break
     # Camera angle
@@ -194,8 +193,9 @@ class SyntheticSet(Dataset):
     def __len__(self):
         return len(self.images)
     
-    def __getitem__(self, idx): # implement getitem from Dataset, idx stands for index
-        if self.split == 'train':
+    def __getitem__(self, idx, split = None): # implement getitem from Dataset, idx stands for index
+        if split is None: split = self.split
+        if split == 'train':
             sample = {'rays': self.rays[idx],
                       'rgbs': self.images[idx]}
             

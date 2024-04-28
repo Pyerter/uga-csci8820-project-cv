@@ -21,7 +21,7 @@ def get_checkpoint_folder(checkpoint_folder_name, subfolder_name = None):
 
 def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
     train_dataset = SyntheticSet(DATA_FOLDERS[0], split='train')
-    test_dataset = SyntheticSet(DATA_FOLDERS[0], split='test')
+    #test_dataset = SyntheticSet(DATA_FOLDERS[0], split='test')
 
     # Initialize and create checkpoint folders for this run
     checkpoint_folder_name = f'{checkpoint_name}{datetime.datetime.now().strftime("-%Y%m%d-%H%M%S")}'
@@ -66,6 +66,7 @@ def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
     images = train_dataset.images
     filter = True
     if filter:
+        print(f'Filtering rays...')
         rays, images = model.filter_rays(rays, images, bb_only=True)
         print(f'Filtered rays!')
 

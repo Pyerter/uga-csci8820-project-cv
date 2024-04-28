@@ -196,7 +196,7 @@ class TensoRFBase(torch.nn.Module):
         self.bb_size = self.bb[1] - self.bb[0]
         self.inv_bb_size = 2.0 / self.bb_size
         self.grid_size = torch.LongTensor(grid_size).to(self.device)
-        self.units = self.bb_size / (self.grid_size - 1)
+        self.units = self.bb_size.to(self.device) / (self.grid_size - 1)
         self.step_size = torch.mean(self.units) * self.step_ratio
         self.bb_diaganol = torch.sqrt(torch.sum(torch.square(self.bb_size)))
         self.number_samples = int((self.bb_diaganol / self.step_size).item()) + 1
@@ -288,22 +288,22 @@ class TensoRFBase(torch.nn.Module):
         step_size = self.step_size # Get step size
         near, far = self.near_far_ray_dists # Get near, far distances for rays
         # Avoid dividing by 0 by making 0s equal to very small numbers
-        vec = torch.where(ray_directions == 0, torch.full_like(ray_directions, 1e-6), ray_directions)
+        vec = torch.where(ray_directions == 0, torch.full_like(ray_directions, 1e-6), ray_directions).to(self.device)
         # Calculate "rates" for bounding boxes - how far along bounding boxes the ray is
-        rate_a, rate_b = (self.bb[1] - ray_origins) / vec, (self.bb[0] - ray_origins) / vec
+        rate_a, rate_b = (self.bb[1].to(self.device) - ray_origins) / vec, (self.bb[0].to(self.device) - ray_origins) / vec
         # Calcualte the minimum distance to the bounding box
-        min_d = torch.minimum(rate_a, rate_b).amax(-1).clamp(near=near, far=far)
+        min_d = torch.minimum(rate_a, rate_b).amax(-1).clamp(near, far)
 
         sample_range = torch.arange(numb_samples)[None].float() # Create values according to number of samples
         if training: # If training, add range for each ray and create noise
             sample_range = sample_range.repeat(ray_directions.shape[-2], 1) # Repeat the range for each ray in batch
             sample_range += torch.rand_like(sample_range[:, [0]]) # Add random noise to the range, augmenting data
-        step = step_size * range.to(ray_origins.device) # Calculate step sizes
+        step = step_size * sample_range.to(step_size.device) # Calculate step sizes
         interpolated_distances = (min_d[..., None] + step) # Calculated interpolated distances along rays
         # Compute sampled points along the rays
-        ray_samples = ray_origins[..., None, :] + ray_directions[..., None, :] * interpolated_distances[..., None]
+        ray_samples = (ray_origins[..., None, :] + ray_directions[..., None, :] * interpolated_distances[..., None]).to(self.device)
         # Get a filter of all points sampled outside of the bounding box
-        external_mask = ((ray_samples < self.bb[0]) | (ray_samples > self.bb[1])).any(dim=-1)
+        external_mask = ((ray_samples < self.bb[0].to(self.device)) | (ray_samples > self.bb[1].to(self.device))).any(dim=-1)
         # Return positions, interpolations, and the opposte of the mask containing rays outside the bounding box
         return ray_samples, interpolated_distances, ~external_mask
     
@@ -315,20 +315,20 @@ class TensoRFBase(torch.nn.Module):
 
         index_chunks = torch.split(torch.arange(0, numb_rays), chunk) # Process indeces in batches
         for index_chunk in index_chunks:
-            print(f'Index chunk: {index_chunk}')
+            #print(f'Index chunk: {index_chunk}')
             # Fetch rays from chunk
             ray_chunk = rays[index_chunk].to(self.device)
-            print(f'Ray chunk is size: {ray_chunk.shape}')
+            #print(f'Ray chunk is size: {ray_chunk.shape}')
             # Get origin and directions of rays
-            ray_origins, ray_directions = ray_chunk[..., :3], ray_chunk[..., 3:6]
+            ray_origins, ray_directions = ray_chunk[..., :3].to(self.device), ray_chunk[..., 3:6].to(self.device)
 
             # If only in bounding box, filter by bounding box intersection
             if bb_only:
                 # Make 0s just barely not 0 to avoid divide by zero error
-                vec = torch.where(ray_directions == 0, torch.full_like(ray_directions, 1e-6), ray_directions)
+                vec = torch.where(ray_directions == 0, torch.full_like(ray_directions, 1e-6), ray_directions).to(self.device)
                 # Calculate intersection of points of rays using bounding box
-                rate_a = (self.bb[1] - ray_origins) / vec
-                rate_b = (self.bb[0] - ray_origins) / vec
+                rate_a = (self.bb[1].to(self.device) - ray_origins) / vec
+                rate_b = (self.bb[0].to(self.device) - ray_origins) / vec
                 t_min = torch.minimum(rate_a, rate_b).amax(-1)
                 t_max = torch.maximum(rate_a, rate_b).amin(-1)
                 # # Create positive masks for rays inside bounding box
