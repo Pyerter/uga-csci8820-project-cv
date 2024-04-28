@@ -36,7 +36,9 @@ def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
     number_samples = min(train_dataset.number_samples, int(np.linalg.norm(resolution)/train_dataset.step_ratio))
     upsample_list = [2000,3000,4000,5500,7000]
 
+    print(f'Creating model...')
     model = TensoRFCP(scene_bb, resolution, device)
+    print(f'Created model!')
 
     lr_initial = 0.02
     lr_basis = 0.001
@@ -57,17 +59,22 @@ def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
     L1_reg_weight = 0.0
     ortho_reg_weight = 0.0
 
+    print(f'Finished loading model parameters')
+
     PSNRs, PSNRs_test = [], [0]
     rays = train_dataset.rays
     images = train_dataset.images
     filter = True
     if filter:
         rays, images = model.filter_rays(rays, images, bb_only=True)
+        print(f'Filtered rays!')
 
     sampler = RandomSampler(rays.shape[0], train_dataset.batch_size)
+    print(f'Created sampler!')
 
     refresh_rate = 1000
     progress_bar = tqdm(range(iterations),  miniters=refresh_rate, file=sys.stdout)
+    print(f'Beginning iteration of model training')
     for iteration in progress_bar:
         # Get sample in iteration
         ray_indeces = sampler.next_ids()

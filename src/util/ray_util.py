@@ -1,26 +1,11 @@
 import torch
+import traceback
+from kornia import create_meshgrid
 
-def create_meshgrid(H, W, normalized_coordinates=False):
-    """
-    Create a mesh grid of coordinates.
-    Inputs:
-        H, W: image height and width
-        normalized_coordinates: whether to normalize coordinates to [-1, 1]
-    Outputs:
-        grid: mesh grid of coordinates
-    """
-    y_grid, x_grid = torch.meshgrid(torch.arange(H), torch.arange(W))
-    if normalized_coordinates:
-        x_grid = (x_grid / (W - 1)) * 2 - 1
-        y_grid = (y_grid / (H - 1)) * 2 - 1
-    grid = torch.stack([x_grid, y_grid], dim=-1)
-    return grid
-
-def get_ray_directions(H, W, focal, center=None):
+def get_ray_directions(H, W, focal, center=None, debug=False):
     """
     Get ray directions for all pixels in camera coordinate.
-    Reference: https://www.scratchapixel.com/lessons/3d-basic-rendering/
-               ray-tracing-generating-camera-rays/standard-coordinate-systems
+    Adapted from Reference: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-generating-camera-rays/standard-coordinate-systems
     Inputs:
         H, W, focal: image height, width and focal length
     Outputs:
@@ -29,10 +14,12 @@ def get_ray_directions(H, W, focal, center=None):
     grid = create_meshgrid(H, W, normalized_coordinates=False)[0] + 0.5
 
     i, j = grid.unbind(-1)
+    if debug: print(f'Directions debug -> i shape: {i.shape}, j shape: {j.shape}')
     # the direction here is without +0.5 pixel centering as calibration is not so accurate
     # see https://github.com/bmild/nerf/issues/24
     cent = center if center is not None else [W / 2, H / 2]
-    directions = torch.stack([(i - cent[0]) / focal[0], (j - cent[1]) / focal[1], torch.ones_like(i)], -1)  # (H, W, 3)
+    directions = torch.stack([(i - cent[0]) / focal[0], (j - cent[1]) / focal[1], torch.ones_like(i)], -1)
+    if debug: print(f'Directions debug -> shape (while getting ray directions): {directions.shape}')
 
     return directions
 

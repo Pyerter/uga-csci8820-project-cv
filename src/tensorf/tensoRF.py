@@ -309,12 +309,16 @@ class TensoRFBase(torch.nn.Module):
     
     def filter_rays(self, rays, images, chunk=10240*5, bb_only = False):
         numb_rays = torch.tensor(rays.shape[:-1]).prod() # Calculate number of rays
+        print(f'Torch tensor shape: {rays.shape}, number rays: {numb_rays}')
+        print(f'Total rays array length: {len(rays)}')
         masks_filtered = [] # Store filtered masks for each chunk
 
-        index_chunks = torch.split(torch.arange(numb_rays), chunk) # Process indeces in batches
+        index_chunks = torch.split(torch.arange(0, numb_rays), chunk) # Process indeces in batches
         for index_chunk in index_chunks:
+            print(f'Index chunk: {index_chunk}')
             # Fetch rays from chunk
             ray_chunk = rays[index_chunk].to(self.device)
+            print(f'Ray chunk is size: {ray_chunk.shape}')
             # Get origin and directions of rays
             ray_origins, ray_directions = ray_chunk[..., :3], ray_chunk[..., 3:6]
 
@@ -339,8 +343,11 @@ class TensoRFBase(torch.nn.Module):
             # Store for later
             masks_filtered.append(mask_in_bb.cpu())
 
+
         # Concatenate masks in list
-        masks_filtered = torch.cat(masks_filtered).view(images.shape[:-1])
+        masks_filtered = torch.cat(masks_filtered)
+        print(f'Filtering rays with mask shape of: {masks_filtered.shape}\nImages of shape: {images.shape}\nRays shape: {rays.shape}')
+        #masks_filtered = masks_filtered.view(images.shape[:-1])
 
         # Filter by the mask
         filtered_rays = rays[masks_filtered]

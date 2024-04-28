@@ -2,9 +2,11 @@ import os
 import json
 import imageio
 import numpy as np
+from PIL import Image
 
 import torch
 from torch.utils.data import Dataset
+from torchvision import transforms as T
 
 from ..utility import norm_path_from_base, norm_path
 from ..util.ray_util import get_rays, get_ray_directions
@@ -45,6 +47,7 @@ def pose_spherical(theta, phi, radius):
     return cam_to_world
 
 def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution = False):
+    print(f'----- Loading synthetic dataset -----')
     # Get base dir of synethetic dataset
     base_dir = norm_path_from_base(DATA_PATH)
     # 3 dataset splits
@@ -54,6 +57,8 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
     for split in splits:
         with open(os.path.join(base_dir, norm_path(f'{item_name}/transforms_{split}.json')), 'r') as f:
             meta_data[split] = json.load(f)
+
+    transform = T.ToTensor()
 
     #print(meta_data)
     for split in splits:
@@ -73,12 +78,15 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
     # directions = get ray directions
     directions = get_ray_directions(height, width, [focal, focal])
     directions = directions / torch.norm(directions, dim=-1, keepdim=True)
+    #print(f'Directions shape: {directions.shape}')
     intrinsics = torch.tensor([[focal,0,width/2], [0,focal,height/2], [0,0,1]]).float()
 
     synth_to_opencv = np.array([[1,0,0,0], [0,-1,0,0], [0,0,-1,0], [0,0,0,1]])
+    #print(f'Synthetic to opencv matrix shape: {synth_to_opencv.shape}')
 
     # Collect all images, poses, and counts
     images, poses, rays, counts = [], [], [], [0]
+    debugged_ray = False
     for split in splits:
         # Get current metadata
         meta = meta_data[split]
@@ -90,7 +98,12 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
         # Collect and read image and poses
         for frame in meta['frames'][::skip]:
             frame_path = os.path.join(base_dir, norm_path(f"{item_name}/{frame['file_path']}.png"))
-            current_images.append(imageio.imread(frame_path))
+            img = transform(Image.open(frame_path)) # -> (4, h, w)
+            # If we want to downsample:
+            # img = img.resize(new_shape, Image.LANCZOS)
+            img = img.view(4, -1).permute(1, 0) # -> (4, h * w) -> (h * w, 4)
+            img = img[:, :3] * img[:, -1:] + (1 - img[:, -1:]) # Blend alpha into RGBs so that it's (h * w, 3)
+            current_images.append(img) # imageio.imread(frame_path)
             pose = torch.FloatTensor(np.array(frame['transform_matrix']) @ synth_to_opencv)
             current_poses.append(np.array(pose)[np.newaxis, :, :])
             ray_origin, ray_direction = get_rays(directions, pose)
@@ -112,10 +125,19 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
     index_splits = [np.arange(counts[i], counts[i+1]) for i in range(3)]
 
     # Squish lists along first axis so the dataset is one list instead of 3 splits
+    poses = np.squeeze(np.concatenate(poses, axis=0), axis=1)
     images = np.concatenate(images, axis=0)
-    poses = np.concatenate(poses, axis=0)
-    rays = np.concatenate(rays, axis=0)
-
+    rays = np.squeeze(np.concatenate(rays, axis=0), axis=1)
+    print(f'Before stacking -> Images shape: {images.shape}, Poses shape: {poses.shape}, Rays shape: {rays.shape}')
+    # And convert from shapes (length, height * width, 3) and (length, height * width, 6)
+    # To (length * width * height, 3) and (length * height * width, 6)
+    images = np.reshape(images, (-1, images.shape[-1]))
+    rays = np.reshape(rays, (-1, rays.shape[-1]))
+    print(f'After stacking -> Images shape: {images.shape}, Poses shape: {poses.shape}, Rays shape: {rays.shape}')
+    # Finally convert to torch tensors
+    poses = torch.FloatTensor(poses)
+    images = torch.FloatTensor(images)
+    rays = torch.FloatTensor(rays)
 
     # Get the render poses around a spherical view
     render_poses = torch.stack([pose_spherical(angle, -30.0, 4.0) for angle in np.linspace(-180, 180, 41)[:-1]], 0)
@@ -126,6 +148,8 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
         width = width // 2
         height = height // 2
         focal = focal / 2.0
+
+    print(f'----- Finished Loading synthetic dataset -----')
 
     return images, poses, rays, render_poses, directions, intrinsics, [height, width, focal], index_splits
 
