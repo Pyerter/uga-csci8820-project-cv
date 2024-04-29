@@ -20,15 +20,22 @@ parser = argparse.ArgumentParser()
 class ConfigParser():
     def __init__(self):
         self.args = None
+        self.initialized = False
 
 conf = ConfigParser()
 
 def pre_train():
+    if conf.initialized:
+        return
     print(f'Clearing cuda cache')
     torch.cuda.empty_cache()
     print(f'Parsing command line arguments')
     parser.add_argument('--ckpt_folder', help='The folder containing the desired checkpoint destination.')
+    parser.add_argument('--render_test', default=False, type=bool, help='Render the test frames when training.')
+    parser.add_argument('--iterations', default=30000, type=int, help='Number of iterations in training.')
+    parser.add_argument('--only_test', default=False, help='Make sure that, instead of training, the model only runs the test splits, assuming --ckpt_holder is set.')
     conf.args = parser.parse_args()
+    conf.initialized = True
 
 
 def get_checkpoint_folder(checkpoint_folder_name, subfolder_name = None):
@@ -36,7 +43,7 @@ def get_checkpoint_folder(checkpoint_folder_name, subfolder_name = None):
         return norm_path_from_base(f'checkpoints/{checkpoint_folder_name}')
     return norm_path_from_base(f'checkpoints/{checkpoint_folder_name}/{subfolder_name}')
 
-def test_on_synthetic(checkpoint_folder_name = None, checkpoint_name = 'tensorf_model', dataset = None, data_folder = DATA_FOLDERS[0]):
+def test_on_synthetic(checkpoint_folder_name = None, checkpoint_name = 'tensorf_model', dataset = None, model = None, data_folder = DATA_FOLDERS[0]):
     pre_train()
     print(f'Asserting checkpoint folder...')
     if checkpoint_folder_name is None:
@@ -47,10 +54,11 @@ def test_on_synthetic(checkpoint_folder_name = None, checkpoint_name = 'tensorf_
             return
     print(f'Checkpoint folder: {checkpoint_folder_name}')
     checkpoint_path = lambda subpath = None: get_checkpoint_folder(checkpoint_folder_name, subpath)
-    ckpt_path = checkpoint_path(f'{checkpoint_name}.th')
-    if not os.path.exists(ckpt_path):
-        print(f'Checkpoint path does not exist at location: {ckpt_path}')
-        return
+    if model is None:
+        ckpt_path = checkpoint_path(f'{checkpoint_name}.th')
+        if not os.path.exists(ckpt_path):
+            print(f'Checkpoint path does not exist at location: {ckpt_path}')
+            return
 
     if dataset is None:
         dataset = SyntheticSet(data_folder, split='test')
@@ -58,21 +66,29 @@ def test_on_synthetic(checkpoint_folder_name = None, checkpoint_name = 'tensorf_
         print(f'Testing dataset provided, no need to load.')
     white_bg = dataset.white_bg
 
-    print(f'Creating and loading model')
-    scene_bb = dataset.scene_bounding_box
-    resolution = [100, 100, 100]#voxel_number_to_resolution(2097156, scene_bb) # 128^3 = 2,097,156 voxels in 128 cubic grid
-    checkpoint = torch.load(ckpt_path, map_location=device)
-    model = TensoRFCP(scene_bb, resolution, device)
-    model.load(checkpoint)
-    print(f'Done loading model!')
+    if model is None:
+        print(f'Creating and loading model')
+        scene_bb = dataset.scene_bounding_box
+        resolution = [100, 100, 100]#voxel_number_to_resolution(2097156, scene_bb) # 128^3 = 2,097,156 voxels in 128 cubic grid
+        checkpoint = torch.load(ckpt_path, map_location=device)
+        model = TensoRFCP(scene_bb, resolution, device)
+        model.load(checkpoint)
+        print(f'Done loading model!')
+    else:
+        print(f'No need to load already given model.')
     
     print(f'Evaluating!')
     os.makedirs(checkpoint_path('test_images'), exist_ok=True)
-    render_model(dataset, model, render_octree_trilinear, 'test_images', checkpoint_path, number_samples=-1, white_bg=white_bg, compute_extra_metrics=True, device=device)
+    render_model(dataset, model, render_octree_trilinear, 'test_images', checkpoint_path, number_visible=-1, number_samples=-1, white_bg=white_bg, compute_extra_metrics=True, device=device)
 
 
-def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
+def train_on_synthetic(checkpoint_name = 'tensorf_model'):
     pre_train()
+    if conf.args.only_test:
+        test_on_synthetic()
+        return
+
+    iterations = conf.args.iterations
 
     train_dataset = SyntheticSet(DATA_FOLDERS[0], split='train')
     #test_dataset = SyntheticSet(DATA_FOLDERS[0], split='test')
@@ -118,7 +134,7 @@ def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
     PSNRs, PSNRs_test = [], [0]
     rays = train_dataset.rays
     images = train_dataset.images
-    filter = True
+    filter = False
     if filter:
         print(f'Filtering rays...')
         rays, images = model.filter_rays(rays, images, bb_only=True)
@@ -204,6 +220,9 @@ def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
     model.save(checkpoint_folder(f'{checkpoint_name}.th'))
 
     # TODO: Run tests and update PSNRs_test here
+    if conf.args.render_test:
+        train_dataset.split = 'test'
+        test_on_synthetic(checkpoint_folder_name, dataset = train_dataset, model = model)
     #os.makedirs(checkpoint_folder('imgs_test_all'), exist_ok=True)
     #PSNRs_test = evaluation(test_dataset,tensorf, args, renderer, f'{logfolder}/imgs_test_all/', N_vis=-1, N_samples=-1, white_bg = white_bg, ndc_ray=ndc_ray,device=device)
     #summary_writer.add_scalar('test/psnr_all', np.mean(PSNRs_test), global_step=iteration)

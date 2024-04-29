@@ -29,18 +29,25 @@ def render_model(dataset, model, renderer, export_folder, checkpoint_path, numbe
     lpips_alex, lpips_vgg = [], []
 
     os.makedirs(checkpoint_path(export_folder), exist_ok=True)
+    os.makedirs(checkpoint_path(f'{export_folder}/rgbd'), exist_ok=True)
 
     try: tqdm._instances.clear()
     except: pass
 
     near, far = dataset.near, dataset.far
-    eval_interval = 1 if number_visible < 0 else max(dataset.rays.shape[0] // number_visible, 1)
-    iterations = dataset.rays.shape[0]
-    indeces = list(range(0, dataset.rays.shape[0], eval_interval))
-    print(f'Beginning evaluation!')
-    for index, samples in tqdm.tqdm(enumerate(dataset.rays[0::eval_interval]), file=sys.stdout):
-        height, width = dataset.height, dataset.width
-        rays = samples.view(-1, samples.shape[-1])
+    iterations = dataset.count_in_split()
+    eval_interval = 1 if number_visible < 0 else max(iterations // number_visible, 1)
+    #indeces = list(range(0, iterations, eval_interval))
+    height, width = dataset.height, dataset.width
+    rays_per_image = dataset.rays_in_image()
+    debugged = False
+    print(f'Beginning evaluation!\nNumber of rays per image: {rays_per_image}\nIterations: {iterations}')
+    for index in tqdm.tqdm(range(0, iterations, eval_interval), file=sys.stdout):
+        current_index = index * rays_per_image
+        next_index = (index + 1) * rays_per_image
+        sample = dataset.grab_sample_set(current_index, next_index)
+        rays = sample['rays']
+        if not debugged: print(f'Shape of rays: {rays.shape}')
         #print(f'Stopping short!')
         #return
 
@@ -49,7 +56,7 @@ def render_model(dataset, model, renderer, export_folder, checkpoint_path, numbe
         img_map, depth_map = img_map.reshape(height, width, 3).cpu(), depth_map.reshape(height, width).cpu()
         depth_map, _ = visualize_depth_numpy(depth_map.numpy(), [near, far])
         if len(dataset.images):
-            gt_img = dataset.images[indeces[index]].view(height, width, 3)
+            gt_img = sample['rgbs'].view(height, width, 3)
             loss = torch.mean((img_map - gt_img) ** 2) # Mean squared error
             PSNRs.append(-10.0 * np.log(loss.item()) / np.log(10.0))
 
@@ -61,14 +68,14 @@ def render_model(dataset, model, renderer, export_folder, checkpoint_path, numbe
                 lpips_alex.append(lpips_a)
                 lpips_vgg.append(lpips_v)
 
-        img_map = (img_map.numpy() * 255).astype('uint8')
+        img_map = (img_map.numpy().astype(float) * 255.0).astype('uint8')
         img_maps.append(img_map)
         depth_maps.append(depth_map)
 
         imageio.imwrite(checkpoint_path(f'{export_folder}/{save_prefix}{index:03d}.png'), img_map)
         img_map = np.concatenate((img_map, depth_map), axis=1)
         imageio.imwrite(checkpoint_path(f'{export_folder}/rgbd/{save_prefix}{index:03d}.png'), img_map)
-        break
+        debugged = True
 
     imageio.mimwrite(checkpoint_path(f'{export_folder}/{save_prefix}video.mp4'), np.stack(img_maps), fps=30, quality=10)
     imageio.mimwrite(checkpoint_path(f'{export_folder}/{save_prefix}depth-video.mp4'), np.stack(depth_maps), fps=30, quality=10)

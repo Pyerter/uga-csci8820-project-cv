@@ -85,6 +85,7 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
 
     # Collect all images, poses, and counts
     images, poses, rays, counts = [], [], [], [0]
+    split_sizes = []
     debugged_ray = False
     for split in splits:
         # Get current metadata
@@ -93,9 +94,8 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
         current_poses = []
         current_rays = []
         # Skip specific indeces in data
-        skip = 1 if split == 'train' or test_skip == 0 else test_skip
         # Collect and read image and poses
-        for frame in meta['frames'][::skip]:
+        for frame in meta['frames']:
             frame_path = os.path.join(base_dir, norm_path(f"{item_name}/{frame['file_path']}.png"))
             with Image.open(frame_path) as img_file:
                 img = transform(img_file) # -> (4, h, w)
@@ -120,9 +120,11 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
         images.append(current_images)
         poses.append(current_poses)
         rays.append(current_rays)
+        split_sizes.append(len(current_poses))
 
     # Create numbered lists containing each index in each split
     index_splits = [np.arange(counts[i], counts[i+1]) for i in range(3)]
+    print(f'Index split starts: {[split[0] for split in index_splits]}')
 
     # Squish lists along first axis so the dataset is one list instead of 3 splits
     poses = np.squeeze(np.concatenate(poses, axis=0), axis=1)
@@ -151,12 +153,12 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
 
     print(f'----- Finished Loading synthetic dataset -----')
 
-    return images, poses, rays, render_poses, directions, intrinsics, [height, width, focal], index_splits
+    return images, poses, rays, render_poses, directions, intrinsics, [height, width, focal], index_splits, split_sizes
 
 class SyntheticSet(Dataset):
     def __init__(self, item_name = DATA_FOLDERS[0], item_index = -1, split='train', test_skip = 1, half_resolution = False):
         self.split = split
-        images, poses, rays, render_poses, directions, intrinsics, [height, width, focal], index_splits = load_synthetic(item_name if item_index < 0 or item_index >= len(DATA_FOLDERS) else DATA_FOLDERS[item_index], test_skip, half_resolution)
+        images, poses, rays, render_poses, directions, intrinsics, [height, width, focal], index_splits, split_sizes = load_synthetic(item_name if item_index < 0 or item_index >= len(DATA_FOLDERS) else DATA_FOLDERS[item_index], test_skip, half_resolution)
         # Main data
         self.images = images
         self.poses = poses
@@ -164,6 +166,7 @@ class SyntheticSet(Dataset):
         self.render_poses = render_poses
         self.directions = directions
         self.instrinsics = intrinsics
+        self.split_sizes = split_sizes
 
         # Parameters
         self.batch_size = 4096
@@ -192,7 +195,7 @@ class SyntheticSet(Dataset):
         
 
     def __len__(self):
-        return len(self.images)
+        return len(self.poses)
     
     def __getitem__(self, idx, split = None): # implement getitem from Dataset, idx stands for index
         if split is None: split = self.split
@@ -207,3 +210,38 @@ class SyntheticSet(Dataset):
             # Missing masks here?
 
         return sample
+    
+    def grab_sample_set(self, start, stop = -1, split=None):
+        if split is None: split = self.split
+        split_indeces = self.train_indeces if split == 'train' else self.test_indeces if split == 'test' else self.val_indeces
+        offset = split_indeces[0] * self.rays_in_image()
+        if stop == -1: indeces = torch.IntTensor([start + offset])
+        else: indeces = torch.IntTensor(np.arange(0, stop - start) + (start + offset))
+        if split == 'train':
+            sample = {'rays': self.rays[indeces],
+                      'rgbs': self.images[indeces]}
+            
+        else:
+            sample = {'rays': self.rays[indeces],
+                      'rgbs': self.images[indeces]}
+            # Missing masks here?
+
+        return sample
+    
+    def numb_poses(self):
+        return len(self.poses)
+    
+    def rays_in_image(self):
+        return self.rays.shape[0] // len(self.poses)
+    
+    def number_split_images(self, split=None):
+        if split is None: split = self.split
+        split_indeces = self.train_indeces if split == 'train' else self.test_indeces if split == 'test' else self.val_indeces
+        return len(split_indeces) // (self.rays.shape[0] // len(self.poses))
+    
+    def count_in_split(self, split=None):      
+        if split is None: split = self.split
+        for i, spl in enumerate(['train', 'test', 'val']):
+            if split == spl: return self.split_sizes[i]
+        return 0
+

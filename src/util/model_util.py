@@ -27,6 +27,19 @@ class RandomSampler():
             self.current = 0
         return self.indeces[self.current : self.current + self.batch_size]
     
+class IterativeSampler():
+    def __init__(self, total, batch_size):
+        self.total = total
+        self.batch_size = batch_size
+        self.current = total
+        self.indeces = torch.LongTensor(np.arange(0, self.total))
+
+    def next_ids(self):
+        self.current += self.batch_size
+        if self.current + self.batch_size > self.total:
+            self.current = 0
+        return self.indeces[self.current : self.current + self.batch_size]
+    
 class TVLoss(Module):
     def __init__(self, TVLoss_weight=1):
         super(TVLoss,self).__init__()
