@@ -23,7 +23,7 @@ def render_octree_trilinear(rays, model: TensoRFBase, chunk=4096, numb_samples=-
     return torch.cat(images), None, torch.cat(depth_maps), None, None
 
 @torch.no_grad()
-def render_model(dataset, model, renderer, export_folder, checkpoint_path, number_visible = 5, save_prefix = '', number_samples = -1, white_bg = False, compute_extra_metrics = True, device = 'cuda'):
+def render_model(dataset, model, renderer, export_folder, checkpoint_path, number_visible = 5, save_prefix = '', number_samples = -1, white_bg = False, compute_extra_metrics = True, device = 'cuda', render_iterations = -1):
     # Create lists for evaluation metrics
     PSNRs, img_maps, depth_maps, SSIMs = [], [], [], []
     lpips_alex, lpips_vgg = [], []
@@ -43,6 +43,7 @@ def render_model(dataset, model, renderer, export_folder, checkpoint_path, numbe
     debugged = False
     print(f'Beginning evaluation!\nNumber of rays per image: {rays_per_image}\nIterations: {iterations}')
     for index in tqdm.tqdm(range(0, iterations, eval_interval), file=sys.stdout):
+        if render_iterations > 0 and index >= render_iterations: break
         current_index = index * rays_per_image
         next_index = (index + 1) * rays_per_image
         sample = dataset.grab_sample_set(current_index, next_index)
@@ -59,12 +60,12 @@ def render_model(dataset, model, renderer, export_folder, checkpoint_path, numbe
             gt_img = sample['rgbs'].view(height, width, 3)
             loss = torch.mean((img_map - gt_img) ** 2) # Mean squared error
             PSNRs.append(-10.0 * np.log(loss.item()) / np.log(10.0))
+            ssim = rgb_ssim(img_map, gt_img, 1)
+            SSIMs.append(ssim)
 
             if compute_extra_metrics:
-                ssim = rgb_ssim(img_map, gt_img, 1)
                 lpips_a = rgb_lpips(gt_img.numpy(), img_map.numpy(), 'alex', model.device)
                 lpips_v = rgb_lpips(gt_img.numpy(), img_map.numpy(), 'vgg', model.device)
-                SSIMs.append(ssim)
                 lpips_alex.append(lpips_a)
                 lpips_vgg.append(lpips_v)
 
@@ -82,12 +83,12 @@ def render_model(dataset, model, renderer, export_folder, checkpoint_path, numbe
 
     if PSNRs:
         psnr = np.mean(np.asarray(PSNRs))
-        metrics = [psnr]
+        ssim = np.mean(np.asarray(SSIMs))
+        metrics = [psnr, ssim]
         if compute_extra_metrics:
-            ssim = np.mean(np.asarray(SSIMs))
             lpips_a = np.mean(np.asarray(lpips_alex))
             lpips_v = np.mean(np.asarray(lpips_vgg))
-            metrics += [ssim, lpips_a, lpips_v]
+            metrics += [lpips_a, lpips_v]
         np.savetxt(checkpoint_path(f"{export_folder}/{save_prefix}mean{'s' if compute_extra_metrics else ''}.txt"), np.asarray(metrics))
 
     return PSNRs

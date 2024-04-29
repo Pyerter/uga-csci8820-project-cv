@@ -1,5 +1,6 @@
 from .data_loading.data_synthetic import SyntheticSet, DATA_FOLDERS
 from .tensorf.tensoRFCP import TensoRFCP
+from .tensorf.tensoRFVM import TensoRFVM
 from .util.model_util import calculate_number_samples, voxel_number_to_resolution, RandomSampler, TVLoss
 from .tensorf.rendering import render_octree_trilinear, render_model
 from .utility import norm_path_from_base
@@ -15,6 +16,7 @@ import torch
 import argparse
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f'Device: {device}')
 parser = argparse.ArgumentParser()
 
 class ConfigParser():
@@ -34,9 +36,15 @@ def pre_train():
     parser.add_argument('--render_test', default=False, type=bool, help='Render the test frames when training.')
     parser.add_argument('--iterations', default=30000, type=int, help='Number of iterations in training.')
     parser.add_argument('--only_test', default=False, help='Make sure that, instead of training, the model only runs the test splits, assuming --ckpt_holder is set.')
+    parser.add_argument('--decomp_mode', default='cp', help='cp or vm, used to determine the model definition for decomposing the feature matrix.')
+    parser.add_argument('--extrametrics', default=False, type=bool, help='If lpips of alexnet and vgg should be included in the metrics for rendering.')
+    parser.add_argument('--test_samples', default=-1, type=int, help='Number of frames to render when testing.')
     conf.args = parser.parse_args()
     conf.initialized = True
 
+def get_model(bb, resolution, device):
+    if conf.args.decomp_mode == 'vm':
+        return TensoRFVM(bb, resolution, device)
 
 def get_checkpoint_folder(checkpoint_folder_name, subfolder_name = None):
     if subfolder_name is None:
@@ -79,7 +87,7 @@ def test_on_synthetic(checkpoint_folder_name = None, checkpoint_name = 'tensorf_
     
     print(f'Evaluating!')
     os.makedirs(checkpoint_path('test_images'), exist_ok=True)
-    render_model(dataset, model, render_octree_trilinear, 'test_images', checkpoint_path, number_visible=-1, number_samples=-1, white_bg=white_bg, compute_extra_metrics=True, device=device)
+    render_model(dataset, model, render_octree_trilinear, 'test_images', checkpoint_path, number_visible=-1, number_samples=-1, white_bg=white_bg, compute_extra_metrics=conf.args.extrametrics, device=device, render_iterations=conf.args.test_samples)
 
 
 def train_on_synthetic(checkpoint_name = 'tensorf_model'):

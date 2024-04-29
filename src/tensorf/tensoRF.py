@@ -158,6 +158,7 @@ class TensoRFBase(torch.nn.Module):
 
         # Mode definitions
         self.mat_dim_pairs = [[0, 1], [0, 2], [1, 2]] # Perform matrix operations on these pairs
+        self.mat_operations_order = [[0,1], [0,2], [1,2]] # Order that matrices are operated on
         self.vec_operations_order = [2, 1, 0] # Order that vector dimensions will be operated on
         self.comp_weights = [1, 1, 1] # The weights across the components
 
