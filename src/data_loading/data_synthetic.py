@@ -64,9 +64,9 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
         meta = meta_data[split]
         for frame in meta['frames'][::]:
             frame_path = os.path.join(base_dir, norm_path(f"{item_name}/{frame['file_path']}.png"))
-            current_image = Image.open(frame_path)
-            # Get height, width from image
-            height, width = current_image.height, current_image.width
+            with Image.open(frame_path) as current_image:
+                # Get height, width from image
+                height, width = current_image.height, current_image.width
             break
         break
     # Camera angle
@@ -97,7 +97,8 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
         # Collect and read image and poses
         for frame in meta['frames'][::skip]:
             frame_path = os.path.join(base_dir, norm_path(f"{item_name}/{frame['file_path']}.png"))
-            img = transform(Image.open(frame_path)) # -> (4, h, w)
+            with Image.open(frame_path) as img_file:
+                img = transform(img_file) # -> (4, h, w)
             # If we want to downsample:
             # img = img.resize(new_shape, Image.LANCZOS)
             img = img.view(4, -1).permute(1, 0) # -> (4, h * w) -> (h * w, 4)

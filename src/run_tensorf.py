@@ -14,12 +14,19 @@ import torch
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+def pre_train():
+    print(f'Clearing cuda cache')
+    torch.cuda.empty_cache()
+
 def get_checkpoint_folder(checkpoint_folder_name, subfolder_name = None):
     if subfolder_name is None:
         return norm_path_from_base(f'checkpoints/{checkpoint_folder_name}')
     return norm_path_from_base(f'checkpoints/{checkpoint_folder_name}/{subfolder_name}')
 
 def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
+    pre_train()
+
+    print(f'Loading synethic dataset')
     train_dataset = SyntheticSet(DATA_FOLDERS[0], split='train')
     #test_dataset = SyntheticSet(DATA_FOLDERS[0], split='test')
 

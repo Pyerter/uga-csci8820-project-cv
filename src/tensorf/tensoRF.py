@@ -89,27 +89,34 @@ class RenderModule(torch.nn.Module):
         self.mlp = Sequential(layer1, ReLU(inplace=True), layer2, ReLU(inplace=True), layer3) # Create mlp
         torch.nn.init.constant_(self.mlp[-1].bias, 0) # Initialize bias terms to 0 in last dimension
 
+        self.debugged = False
+
     def forward(self, positions, view_directions, features):
         in_data = [features, view_directions] # Input data list
+        if not self.debugged: print(f'----- Forward pass start\nFeatures: {features.shape}\nView Directions: {view_directions.shape}')
 
         # If position positional encodings
         if self.pos_posenc > 0:
             # Append position encodings to the data
             in_data += [positional_encodings(positions, self.pos_posenc)]
+            if not self.debugged: print(f'Position positional encodings: {in_data[-1].shape}')
         # If feature positional encodings
         if self.feature_posenc > 0:
             # Append feature encodings to the data
             in_data += [positional_encodings(features, self.feature_posenc)]
+            if not self.debugged: print(f'Feature positional encodings: {in_data[-1].shape}')
         # If view positional encodings (which should be always)
         if self.view_posenc > 0:
             # Append view encodings to the data
             in_data += [positional_encodings(view_directions, self.view_posenc)]
+            if not self.debugged: print(f'View positional encodings: {in_data[-1].shape}')
         
         # Concatenate all of the data along the last dimension
         mlp_in = torch.cat(in_data, dim=-1)
         # Pass through the mlp
         out = self.mlp(mlp_in)
         out = torch.sigmoid(out)
+        self.debugged = True
         return out # Return the predicted RGB values for each point in the volume
         
 
@@ -194,7 +201,7 @@ class TensoRFBase(torch.nn.Module):
         print(f'Axis-aligned bounding box: {self.bb.view(-1)}')
         print(f'Grid size: {grid_size}')
         self.bb_size = self.bb[1] - self.bb[0]
-        self.inv_bb_size = 2.0 / self.bb_size
+        self.inv_bb_size = (2.0 / self.bb_size).to(self.device)
         self.grid_size = torch.LongTensor(grid_size).to(self.device)
         self.units = self.bb_size.to(self.device) / (self.grid_size - 1)
         self.step_size = torch.mean(self.units) * self.step_ratio
@@ -218,7 +225,7 @@ class TensoRFBase(torch.nn.Module):
         pass
 
     def normalize_coords(self, positions):
-        return (positions - self.bb[0]) * self.inv_bb_size - 1
+        return (positions - self.bb[0].to(positions.device)) * self.inv_bb_size - 1
     
     def get_optional_parameter_groups(self, lr_init_spatial = 0.02, lr_init_network = 0.001):
         pass
