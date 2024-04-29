@@ -1,7 +1,7 @@
 from .data_loading.data_synthetic import SyntheticSet, DATA_FOLDERS
 from .tensorf.tensoRFCP import TensoRFCP
 from .util.model_util import calculate_number_samples, voxel_number_to_resolution, RandomSampler, TVLoss
-from .tensorf.rendering import render_octree_trilinear
+from .tensorf.rendering import render_octree_trilinear, render_model
 from .utility import norm_path_from_base
 
 import sys
@@ -12,21 +12,68 @@ import numpy as np
 from tqdm import tqdm
 import torch
 
+import argparse
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+parser = argparse.ArgumentParser()
+
+class ConfigParser():
+    def __init__(self):
+        self.args = None
+
+conf = ConfigParser()
 
 def pre_train():
     print(f'Clearing cuda cache')
     torch.cuda.empty_cache()
+    print(f'Parsing command line arguments')
+    parser.add_argument('--ckpt_folder', help='The folder containing the desired checkpoint destination.')
+    conf.args = parser.parse_args()
+
 
 def get_checkpoint_folder(checkpoint_folder_name, subfolder_name = None):
     if subfolder_name is None:
         return norm_path_from_base(f'checkpoints/{checkpoint_folder_name}')
     return norm_path_from_base(f'checkpoints/{checkpoint_folder_name}/{subfolder_name}')
 
+def test_on_synthetic(checkpoint_folder_name = None, checkpoint_name = 'tensorf_model', dataset = None, data_folder = DATA_FOLDERS[0]):
+    pre_train()
+    print(f'Asserting checkpoint folder...')
+    if checkpoint_folder_name is None:
+        if conf.args.ckpt_folder is not None:
+            checkpoint_folder_name = conf.args.ckpt_folder
+        else:
+            print(f'No checkpoint folder provided for testing!')
+            return
+    print(f'Checkpoint folder: {checkpoint_folder_name}')
+    checkpoint_path = lambda subpath = None: get_checkpoint_folder(checkpoint_folder_name, subpath)
+    ckpt_path = checkpoint_path(f'{checkpoint_name}.th')
+    if not os.path.exists(ckpt_path):
+        print(f'Checkpoint path does not exist at location: {ckpt_path}')
+        return
+
+    if dataset is None:
+        dataset = SyntheticSet(data_folder, split='test')
+    else:
+        print(f'Testing dataset provided, no need to load.')
+    white_bg = dataset.white_bg
+
+    print(f'Creating and loading model')
+    scene_bb = dataset.scene_bounding_box
+    resolution = [100, 100, 100]#voxel_number_to_resolution(2097156, scene_bb) # 128^3 = 2,097,156 voxels in 128 cubic grid
+    checkpoint = torch.load(ckpt_path, map_location=device)
+    model = TensoRFCP(scene_bb, resolution, device)
+    model.load(checkpoint)
+    print(f'Done loading model!')
+    
+    print(f'Evaluating!')
+    os.makedirs(checkpoint_path('test_images'), exist_ok=True)
+    render_model(dataset, model, render_octree_trilinear, 'test_images', checkpoint_path, number_visible=-1, number_samples=-1, white_bg=white_bg, compute_extra_metrics=True, device=device)
+
+
 def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
     pre_train()
 
-    print(f'Loading synethic dataset')
     train_dataset = SyntheticSet(DATA_FOLDERS[0], split='train')
     #test_dataset = SyntheticSet(DATA_FOLDERS[0], split='test')
 
@@ -154,7 +201,7 @@ def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):
             optimizer = torch.optim.Adam(optimizer_variables, betas=(0.9, 0.99))
 
     # Save the checkpoint here
-    model.save(norm_path_from_base(f'checkpoints/{checkpoint_name}.th'))
+    model.save(checkpoint_folder(f'{checkpoint_name}.th'))
 
     # TODO: Run tests and update PSNRs_test here
     #os.makedirs(checkpoint_folder('imgs_test_all'), exist_ok=True)

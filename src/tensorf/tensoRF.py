@@ -74,7 +74,7 @@ class RenderModule(torch.nn.Module):
         # if pos_posenc: + 3 + 2 * pos_posenc * 3 = + 3 + 6 * pos_posenc
         # if feature_posenc: + 2 * feature_posenc * in_channels
         self.in_mlp_count = 3 + 6 * view_posenc + in_channels # In channels + view positional encodings
-        if pos_posenc > 0: self.in_mlp_count += 3 + 6 * pos_posenc # + any position positional encodings
+        if pos_posenc > 0: self.in_mlp_count += 6 * pos_posenc # + any position positional encodings
         if feature_posenc > 0: self.in_mlp_count += 2 * feature_posenc * in_channels # + any feature positional encodings
 
         # Cache the view, position, and feature positional encodings
