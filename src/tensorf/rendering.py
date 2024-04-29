@@ -35,12 +35,16 @@ def render_model(dataset, model, renderer, export_folder, checkpoint_path, numbe
 
     near, far = dataset.near, dataset.far
     eval_interval = 1 if number_visible < 0 else max(dataset.rays.shape[0] // number_visible, 1)
+    iterations = dataset.rays.shape[0]
     indeces = list(range(0, dataset.rays.shape[0], eval_interval))
+    print(f'Beginning evaluation!')
     for index, samples in tqdm.tqdm(enumerate(dataset.rays[0::eval_interval]), file=sys.stdout):
         height, width = dataset.height, dataset.width
         rays = samples.view(-1, samples.shape[-1])
+        #print(f'Stopping short!')
+        #return
 
-        img_map, _, depth_map, _, _ = renderer(rays, model, chunk=dataset.batch_size, white_bg=white_bg, device=device, training=False)
+        img_map, _, depth_map, _, _ = renderer(rays, model, chunk=dataset.batch_size, numb_samples=number_samples, white_bg=white_bg, device=device, training=False)
         img_map = img_map.clamp(0.0, 1.0)
         img_map, depth_map = img_map.reshape(height, width, 3).cpu(), depth_map.reshape(height, width).cpu()
         depth_map, _ = visualize_depth_numpy(depth_map.numpy(), [near, far])
@@ -64,6 +68,7 @@ def render_model(dataset, model, renderer, export_folder, checkpoint_path, numbe
         imageio.imwrite(checkpoint_path(f'{export_folder}/{save_prefix}{index:03d}.png'), img_map)
         img_map = np.concatenate((img_map, depth_map), axis=1)
         imageio.imwrite(checkpoint_path(f'{export_folder}/rgbd/{save_prefix}{index:03d}.png'), img_map)
+        break
 
     imageio.mimwrite(checkpoint_path(f'{export_folder}/{save_prefix}video.mp4'), np.stack(img_maps), fps=30, quality=10)
     imageio.mimwrite(checkpoint_path(f'{export_folder}/{save_prefix}depth-video.mp4'), np.stack(depth_maps), fps=30, quality=10)

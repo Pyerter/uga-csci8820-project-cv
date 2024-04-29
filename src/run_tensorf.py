@@ -68,7 +68,7 @@ def test_on_synthetic(checkpoint_folder_name = None, checkpoint_name = 'tensorf_
     
     print(f'Evaluating!')
     os.makedirs(checkpoint_path('test_images'), exist_ok=True)
-    render_model(dataset, model, render_octree_trilinear, 'test_images', checkpoint_path, number_visible=-1, number_samples=-1, white_bg=white_bg, compute_extra_metrics=True, device=device)
+    render_model(dataset, model, render_octree_trilinear, 'test_images', checkpoint_path, number_samples=-1, white_bg=white_bg, compute_extra_metrics=True, device=device)
 
 
 def train_on_synthetic(checkpoint_name = 'tensorf_model', iterations = 30000):

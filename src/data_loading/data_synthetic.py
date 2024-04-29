@@ -196,13 +196,14 @@ class SyntheticSet(Dataset):
     
     def __getitem__(self, idx, split = None): # implement getitem from Dataset, idx stands for index
         if split is None: split = self.split
+        split_indeces = self.train_indeces if split == 'train' else self.test_indeces if split == 'test' else self.val_indeces
         if split == 'train':
-            sample = {'rays': self.rays[idx],
-                      'rgbs': self.images[idx]}
+            sample = {'rays': self.rays[split_indeces[idx]],
+                      'rgbs': self.images[split_indeces[idx]]}
             
         else:
-            sample = {'rays': self.rays[idx],
-                      'rgbs': self.images[idx]}
+            sample = {'rays': self.rays[split_indeces[idx]],
+                      'rgbs': self.images[split_indeces[idx]]}
             # Missing masks here?
 
         return sample
