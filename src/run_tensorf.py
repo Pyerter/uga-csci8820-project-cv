@@ -39,19 +39,24 @@ def pre_train():
     parser.add_argument('--decomp_mode', default='cp', help='cp or vm, used to determine the model definition for decomposing the feature matrix.')
     parser.add_argument('--extrametrics', default=False, type=bool, help='If lpips of alexnet and vgg should be included in the metrics for rendering.')
     parser.add_argument('--test_samples', default=-1, type=int, help='Number of frames to render when testing.')
+    parser.add_argument('--data_folder', default=0, type=int, help='The index of the data folder being used from the blender dataset.')
     conf.args = parser.parse_args()
     conf.initialized = True
 
 def get_model(bb, resolution, device):
     if conf.args.decomp_mode == 'vm':
         return TensoRFVM(bb, resolution, device)
+    return TensoRFCP(bb, resolution, device)
+
+def get_dataset(split = 'train'):
+    return SyntheticSet(DATA_FOLDERS[conf.args.data_folder], split=split)
 
 def get_checkpoint_folder(checkpoint_folder_name, subfolder_name = None):
     if subfolder_name is None:
         return norm_path_from_base(f'checkpoints/{checkpoint_folder_name}')
     return norm_path_from_base(f'checkpoints/{checkpoint_folder_name}/{subfolder_name}')
 
-def test_on_synthetic(checkpoint_folder_name = None, checkpoint_name = 'tensorf_model', dataset = None, model = None, data_folder = DATA_FOLDERS[0]):
+def test_on_synthetic(checkpoint_folder_name = None, checkpoint_name = 'tensorf_model', dataset = None, model = None):
     pre_train()
     print(f'Asserting checkpoint folder...')
     if checkpoint_folder_name is None:
@@ -69,7 +74,7 @@ def test_on_synthetic(checkpoint_folder_name = None, checkpoint_name = 'tensorf_
             return
 
     if dataset is None:
-        dataset = SyntheticSet(data_folder, split='test')
+        dataset = get_dataset('test')
     else:
         print(f'Testing dataset provided, no need to load.')
     white_bg = dataset.white_bg
@@ -79,7 +84,7 @@ def test_on_synthetic(checkpoint_folder_name = None, checkpoint_name = 'tensorf_
         scene_bb = dataset.scene_bounding_box
         resolution = [100, 100, 100]#voxel_number_to_resolution(2097156, scene_bb) # 128^3 = 2,097,156 voxels in 128 cubic grid
         checkpoint = torch.load(ckpt_path, map_location=device)
-        model = TensoRFCP(scene_bb, resolution, device)
+        model = get_model(scene_bb, resolution, device)
         model.load(checkpoint)
         print(f'Done loading model!')
     else:
@@ -98,8 +103,7 @@ def train_on_synthetic(checkpoint_name = 'tensorf_model'):
 
     iterations = conf.args.iterations
 
-    train_dataset = SyntheticSet(DATA_FOLDERS[0], split='train')
-    #test_dataset = SyntheticSet(DATA_FOLDERS[0], split='test')
+    train_dataset = get_dataset('train')
 
     # Initialize and create checkpoint folders for this run
     checkpoint_folder_name = f'{checkpoint_name}{datetime.datetime.now().strftime("-%Y%m%d-%H%M%S")}'
@@ -115,7 +119,7 @@ def train_on_synthetic(checkpoint_name = 'tensorf_model'):
     upsample_list = [2000,3000,4000,5500,7000]
 
     print(f'Creating model...')
-    model = TensoRFCP(scene_bb, resolution, device)
+    model = get_model(scene_bb, resolution, device)
     print(f'Created model!')
 
     lr_initial = 0.02
