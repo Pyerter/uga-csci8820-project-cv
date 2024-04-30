@@ -159,4 +159,5 @@ cython_debug/
 #.idea/
 
 __pycache__
-data
+data/
+checkpoints/
