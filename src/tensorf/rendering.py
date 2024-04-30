@@ -29,6 +29,7 @@ def render_model(dataset, model, renderer, export_folder, checkpoint_path, numbe
     lpips_alex, lpips_vgg = [], []
 
     os.makedirs(checkpoint_path(export_folder), exist_ok=True)
+    os.makedirs(checkpoint_path(f'{export_folder}/rgb'), exist_ok=True)
     os.makedirs(checkpoint_path(f'{export_folder}/rgbd'), exist_ok=True)
 
     try: tqdm._instances.clear()
@@ -47,7 +48,10 @@ def render_model(dataset, model, renderer, export_folder, checkpoint_path, numbe
         current_index = index * rays_per_image
         next_index = (index + 1) * rays_per_image
         sample = dataset.grab_sample_set(current_index, next_index)
-        rays = sample['rays']
+        rays = sample['rays'] 
+        # (1, height, width, 6)
+        # (height * width, 6)
+        # (1, height, width, 6)
         if not debugged: print(f'Shape of rays: {rays.shape}')
         #print(f'Stopping short!')
         #return
@@ -73,7 +77,7 @@ def render_model(dataset, model, renderer, export_folder, checkpoint_path, numbe
         img_maps.append(img_map)
         depth_maps.append(depth_map)
 
-        imageio.imwrite(checkpoint_path(f'{export_folder}/{save_prefix}{index:03d}.png'), img_map)
+        imageio.imwrite(checkpoint_path(f'{export_folder}/rgb/{save_prefix}{index:03d}.png'), img_map)
         img_map = np.concatenate((img_map, depth_map), axis=1)
         imageio.imwrite(checkpoint_path(f'{export_folder}/rgbd/{save_prefix}{index:03d}.png'), img_map)
         debugged = True

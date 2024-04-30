@@ -7,6 +7,8 @@ import torch.nn.functional as F
 class TensoRFVM(TensoRFBase):
     """
     Adapted from Reference: https://github.com/apchenstu/TensoRF/blob/main/models/tensoRF.py 
+    Vector Matrix compositions were much more directly used from the TensoRF github while the TensoRFCP 
+    classes were altered more.
     """
     def __init__(self, aabb, gridSize, device, **kargs):
         super(TensoRFVM, self).__init__(aabb, gridSize, device, **kargs)
@@ -130,6 +132,8 @@ class TensoRFVM(TensoRFBase):
 class TensoRFVMSplit(TensoRFBase):
     def __init__(self, aabb, gridSize, device, **kargs):
         super(TensoRFVMSplit, self).__init__(aabb, gridSize, device, **kargs)
+        
+        self.init_svd_volume(gridSize[0], device)
 
 
     def init_svd_volume(self, res, device):
@@ -152,7 +156,7 @@ class TensoRFVMSplit(TensoRFBase):
     
     
 
-    def get_optparam_groups(self, lr_init_spatialxyz = 0.02, lr_init_network = 0.001):
+    def get_optional_parameter_groups(self, lr_init_spatialxyz = 0.02, lr_init_network = 0.001):
         grad_vars = [{'params': self.density_line, 'lr': lr_init_spatialxyz}, {'params': self.density_plane, 'lr': lr_init_spatialxyz},
                      {'params': self.app_line, 'lr': lr_init_spatialxyz}, {'params': self.app_plane, 'lr': lr_init_spatialxyz},
                          {'params': self.basis_mat.parameters(), 'lr':lr_init_network}]
@@ -172,7 +176,7 @@ class TensoRFVMSplit(TensoRFBase):
             total = total + torch.mean(torch.abs(non_diagonal))
         return total
 
-    def vector_comp_diffs(self):
+    def vector_component_diffs(self):
         return self.vectorDiffs(self.density_line) + self.vectorDiffs(self.app_line)
     
     def density_L1(self):
@@ -187,17 +191,17 @@ class TensoRFVMSplit(TensoRFBase):
             total = total + reg(self.density_plane[idx]) * 1e-2 #+ reg(self.density_line[idx]) * 1e-3
         return total
         
-    def TV_loss_app(self, reg):
+    def TV_loss_appearance(self, reg):
         total = 0
         for idx in range(len(self.app_plane)):
             total = total + reg(self.app_plane[idx]) * 1e-2 #+ reg(self.app_line[idx]) * 1e-3
         return total
 
-    def compute_densityfeature(self, xyz_sampled):
+    def compute_density_features(self, xyz_sampled):
 
         # plane + line basis
-        coordinate_plane = torch.stack((xyz_sampled[..., self.matMode[0]], xyz_sampled[..., self.matMode[1]], xyz_sampled[..., self.matMode[2]])).detach().view(3, -1, 1, 2)
-        coordinate_line = torch.stack((xyz_sampled[..., self.vecMode[0]], xyz_sampled[..., self.vecMode[1]], xyz_sampled[..., self.vecMode[2]]))
+        coordinate_plane = torch.stack((xyz_sampled[..., self.mat_operations_order[0]], xyz_sampled[..., self.mat_operations_order[1]], xyz_sampled[..., self.mat_operations_order[2]])).detach().view(3, -1, 1, 2)
+        coordinate_line = torch.stack((xyz_sampled[..., self.vec_operations_order[0]], xyz_sampled[..., self.vec_operations_order[1]], xyz_sampled[..., self.vec_operations_order[2]]))
         coordinate_line = torch.stack((torch.zeros_like(coordinate_line), coordinate_line), dim=-1).detach().view(3, -1, 1, 2)
 
         sigma_feature = torch.zeros((xyz_sampled.shape[0],), device=xyz_sampled.device)
@@ -211,11 +215,11 @@ class TensoRFVMSplit(TensoRFBase):
         return sigma_feature
 
 
-    def compute_appfeature(self, xyz_sampled):
+    def compute_appearance_features(self, xyz_sampled):
 
         # plane + line basis
-        coordinate_plane = torch.stack((xyz_sampled[..., self.matMode[0]], xyz_sampled[..., self.matMode[1]], xyz_sampled[..., self.matMode[2]])).detach().view(3, -1, 1, 2)
-        coordinate_line = torch.stack((xyz_sampled[..., self.vecMode[0]], xyz_sampled[..., self.vecMode[1]], xyz_sampled[..., self.vecMode[2]]))
+        coordinate_plane = torch.stack((xyz_sampled[..., self.mat_operations_order[0]], xyz_sampled[..., self.mat_operations_order[1]], xyz_sampled[..., self.mat_operations_order[2]])).detach().view(3, -1, 1, 2)
+        coordinate_line = torch.stack((xyz_sampled[..., self.vec_operations_order[0]], xyz_sampled[..., self.vec_operations_order[1]], xyz_sampled[..., self.vec_operations_order[2]]))
         coordinate_line = torch.stack((torch.zeros_like(coordinate_line), coordinate_line), dim=-1).detach().view(3, -1, 1, 2)
 
         plane_coef_point,line_coef_point = [],[]
@@ -234,9 +238,9 @@ class TensoRFVMSplit(TensoRFBase):
     @torch.no_grad()
     def up_sampling_VM(self, plane_coef, line_coef, res_target):
 
-        for i in range(len(self.vecMode)):
-            vec_id = self.vecMode[i]
-            mat_id_0, mat_id_1 = self.matMode[i]
+        for i in range(len(self.vec_operations_order)):
+            vec_id = self.vec_operations_order[i]
+            mat_id_0, mat_id_1 = self.mat_operations_order[i]
             plane_coef[i] = torch.nn.Parameter(
                 F.interpolate(plane_coef[i].data, size=(res_target[mat_id_1], res_target[mat_id_0]), mode='bilinear',
                               align_corners=True))
@@ -251,28 +255,26 @@ class TensoRFVMSplit(TensoRFBase):
         self.app_plane, self.app_line = self.up_sampling_VM(self.app_plane, self.app_line, res_target)
         self.density_plane, self.density_line = self.up_sampling_VM(self.density_plane, self.density_line, res_target)
 
-        self.update_stepSize(res_target)
+        self.update_step_size(res_target)
         print(f'upsamping to {res_target}')
 
     @torch.no_grad()
     def shrink(self, new_aabb):
         print("====> shrinking ...")
         xyz_min, xyz_max = new_aabb
-        t_l, b_r = (xyz_min - self.aabb[0]) / self.units, (xyz_max - self.aabb[0]) / self.units
-        # print(new_aabb, self.aabb)
-        # print(t_l, b_r,self.alphaMask.alpha_volume.shape)
+        t_l, b_r = (xyz_min - self.bb[0].to(self.device)) / self.units, (xyz_max - self.bb[0].to(self.device)) / self.units
         t_l, b_r = torch.round(torch.round(t_l)).long(), torch.round(b_r).long() + 1
-        b_r = torch.stack([b_r, self.gridSize]).amin(0)
+        b_r = torch.stack([b_r, self.grid_size]).amin(0)
 
-        for i in range(len(self.vecMode)):
-            mode0 = self.vecMode[i]
+        for i in range(len(self.vec_operations_order)):
+            mode0 = self.vec_operations_order[i]
             self.density_line[i] = torch.nn.Parameter(
                 self.density_line[i].data[...,t_l[mode0]:b_r[mode0],:]
             )
             self.app_line[i] = torch.nn.Parameter(
                 self.app_line[i].data[...,t_l[mode0]:b_r[mode0],:]
             )
-            mode0, mode1 = self.matMode[i]
+            mode0, mode1 = self.mat_operations_order[i]
             self.density_plane[i] = torch.nn.Parameter(
                 self.density_plane[i].data[...,t_l[mode1]:b_r[mode1],t_l[mode0]:b_r[mode0]]
             )
@@ -281,14 +283,14 @@ class TensoRFVMSplit(TensoRFBase):
             )
 
 
-        if not torch.all(self.alphaMask.gridSize == self.gridSize):
-            t_l_r, b_r_r = t_l / (self.gridSize-1), (b_r-1) / (self.gridSize-1)
+        if not torch.all(self.alpha_mask.grid_size == self.grid_size):
+            t_l_r, b_r_r = t_l / (self.grid_size-1), (b_r-1) / (self.grid_size-1)
             correct_aabb = torch.zeros_like(new_aabb)
-            correct_aabb[0] = (1-t_l_r)*self.aabb[0] + t_l_r*self.aabb[1]
-            correct_aabb[1] = (1-b_r_r)*self.aabb[0] + b_r_r*self.aabb[1]
+            correct_aabb[0] = (1-t_l_r)*self.bb[0].to(self.device) + t_l_r*self.bb[1].to(self.device)
+            correct_aabb[1] = (1-b_r_r)*self.bb[0].to(self.device) + b_r_r*self.bb[1].to(self.device)
             print("aabb", new_aabb, "\ncorrect aabb", correct_aabb)
             new_aabb = correct_aabb
 
         newSize = b_r - t_l
-        self.aabb = new_aabb
-        self.update_stepSize((newSize[0], newSize[1], newSize[2]))
+        self.bb = new_aabb
+        self.update_step_size((newSize[0], newSize[1], newSize[2]))

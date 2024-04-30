@@ -49,6 +49,7 @@ def load_synthetic(item_name = DATA_FOLDERS[0], test_skip = 1, half_resolution =
     print(f'----- Loading synthetic dataset -----')
     # Get base dir of synethetic dataset
     base_dir = norm_path_from_base(DATA_PATH)
+    print(f'Fetching dataset from folder: {base_dir}')
     # 3 dataset splits
     splits = ['train', 'test', 'val']
     meta_data = {}
@@ -244,4 +245,7 @@ class SyntheticSet(Dataset):
         for i, spl in enumerate(['train', 'test', 'val']):
             if split == spl: return self.split_sizes[i]
         return 0
+    
+    def rays_in_split(self, split=None):
+        return self.count_in_split(split) * self.rays_in_image()
 

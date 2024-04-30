@@ -4,6 +4,10 @@ from torch.nn import Linear, Sequential, ReLU
 from torch import LongTensor
 import torch
 
+"""
+Adapted from reference: https://github.com/apchenstu/TensoRF/blob/main/models/tensorBase.py 
+"""
+
 def positional_encodings(positions, frequencies):
         frequency_bands = (2**torch.arange(frequencies).float()).to(positions.device)  # (F,)
         pts = (positions[..., None] * frequency_bands).reshape(positions.shape[:-1] + (frequencies * positions.shape[-1], ))  # (..., DF)
@@ -46,7 +50,7 @@ class AlphaGridMask(torch.nn.Module):
         self.bb_size = self.bb[1] - self.bb[0] # get bounding box size
         self.inverse_grid_size = 2.0 / self.bb_size # get the inberse grid size, normalizing coords
         self.alpha_volume = alpha_volume.view(1, 1, *alpha_volume.shape[-3:]) # volume data
-        self.grid_size = LongTensor([alpha_volume.shape[-1], alpha_volume.shape[-2], alpha_volume[-3]]).to(self.device) # grid sizes
+        self.grid_size = LongTensor([alpha_volume.shape[-1], alpha_volume.shape[-2], alpha_volume.shape[-3]]).to(self.device) # grid sizes
 
     # Get the alpha values at given positions
     def sample_alpha(self, positions):
@@ -241,6 +245,9 @@ class TensoRFBase(torch.nn.Module):
     def upsample_volume_grid(self):
         pass
 
+    def shrink(self, new_bb):
+        pass
+
     def get_kwargs(self):
         return {
             'bounding_box': self.bb,
@@ -362,6 +369,57 @@ class TensoRFBase(torch.nn.Module):
         filtered_images = images[masks_filtered]
 
         return filtered_rays, filtered_images
+    
+    def compute_alpha(self, positions, length=1):
+        if self.alpha_mask is not None:
+            alphas = self.alpha_mask.sample_alpha(positions)
+            alpha_mask = alphas > 0
+        else:
+            alpha_mask = torch.ones_like(positions[:, 0], dtype=bool)
+        sigma = torch.zeros(positions.shape[:-1], device=positions.device)
+        if alpha_mask.any():
+            positions_sampled = self.normalize_coords(positions[alpha_mask])
+            sigma_feature = self.compute_density_features(positions_sampled)
+            valid_sigma = self.feature_to_density_compute(sigma_feature)
+            sigma[alpha_mask] = valid_sigma
+
+        alpha = 1 - torch.exp(-sigma * length).view(positions.shape[:-1])
+        return alpha
+
+    @torch.no_grad()
+    def get_dense_alpha(self, grid_size=None):
+        grid_size = self.grid_size if grid_size is None else grid_size
+        # Get samples of density positions
+        samples = torch.stack(torch.meshgrid(torch.linspace(0, 1, grid_size[0]), torch.linspace(0, 1, grid_size[1]), torch.linspace(0, 1, grid_size[2])), -1).to(self.device)
+        density_pos = self.bb[0].to(self.device) * (1 - samples) + self.bb[1].to(self.device) * samples
+
+        alpha = torch.zeros_like(density_pos[..., 0])
+        for i in range(grid_size[0]):
+            alpha[i] = self.compute_alpha(density_pos[i].view(-1, 3), self.step_size).view(grid_size[1], grid_size[2])
+        return alpha, density_pos
+
+    @torch.no_grad()
+    def update_alpha_mask(self, grid_size=[200, 200, 200]):
+        if grid_size is None:
+            print(f'Updating alpha mask with grid size of None! Cant do it!')
+            return self.bb
+        # Get density alpha values
+        alpha, density_pos = self.get_dense_alpha(grid_size)
+        density_pos = density_pos.transpose(0, 2).contiguous()
+        alpha = alpha.clamp(0, 1).transpose(0, 2).contiguous()[None, None]
+        total_voxels = grid_size[0] * grid_size[1] * grid_size[2]
+        ks = 3
+        alpha = F.max_pool3d(alpha, kernel_size=ks, padding=ks//2, stride=1).view(grid_size[::-1])
+        alpha[alpha >= self.alpha_mask_threshold] = 1
+        alpha[alpha < self.alpha_mask_threshold] = 0
+        self.alpha_mask = AlphaGridMask(self.device, self.bb, alpha)
+        valid_pos = density_pos[alpha > 0.5]
+        pos_min = valid_pos.amin(0)
+        pos_max = valid_pos.amax(0)
+        new_bb = torch.stack((pos_min, pos_max))
+        total = torch.sum(alpha)
+        print(f'Bounding box: {pos_min, pos_max}, alpha reset {total / total_voxels * 100}')
+        return new_bb
 
     def feature_to_density_compute(self, density_features):
         if self.feature_density_act_funct == 'softplus':

@@ -1,6 +1,6 @@
 from .data_loading.data_synthetic import SyntheticSet, DATA_FOLDERS
 from .tensorf.tensoRFCP import TensoRFCP
-from .tensorf.tensoRFVM import TensoRFVM
+from .tensorf.tensoRFVM import TensoRFVM, TensoRFVMSplit
 from .util.model_util import calculate_number_samples, voxel_number_to_resolution, RandomSampler, TVLoss
 from .tensorf.rendering import render_octree_trilinear, render_model
 from .utility import norm_path_from_base
@@ -46,6 +46,8 @@ def pre_train():
 def get_model(bb, resolution, device):
     if conf.args.decomp_mode == 'vm':
         return TensoRFVM(bb, resolution, device)
+    elif conf.args.decomp_mode == 'vms':
+        return TensoRFVMSplit(bb, resolution, device)
     return TensoRFCP(bb, resolution, device)
 
 def get_dataset(split = 'train'):
@@ -115,8 +117,10 @@ def train_on_synthetic(checkpoint_name = 'tensorf_model'):
 
     scene_bb = train_dataset.scene_bounding_box
     resolution = voxel_number_to_resolution(2097156, scene_bb) # 128^3 = 2,097,156 voxels in 128 cubic grid
+    resolution_current = resolution
     number_samples = min(train_dataset.number_samples, int(np.linalg.norm(resolution)/train_dataset.step_ratio))
     upsample_list = [2000,3000,4000,5500,7000]
+    update_alpha_mask_list = [2000, 4000]
 
     print(f'Creating model...')
     model = get_model(scene_bb, resolution, device)
@@ -152,7 +156,7 @@ def train_on_synthetic(checkpoint_name = 'tensorf_model'):
         rays, images = model.filter_rays(rays, images, bb_only=True)
         print(f'Filtered rays!')
 
-    sampler = RandomSampler(rays.shape[0], train_dataset.batch_size)
+    sampler = RandomSampler(train_dataset.rays_in_split(), train_dataset.batch_size)
     print(f'Created sampler!')
 
     refresh_rate = 1000
@@ -209,6 +213,15 @@ def train_on_synthetic(checkpoint_name = 'tensorf_model'):
                                          + f' test_PSNR ({float(np.mean(PSNRs_test)):.2f})'
                                          + f' MSE ({loss:.6f})')
             PSNRs = []
+
+        if iteration in update_alpha_mask_list:
+            if resolution_current[0] * resolution_current[1] * resolution_current[2] < 256**3:
+                resolution_mask = resolution_current
+            new_bb = model.update_alpha_mask(resolution_mask)
+            if iteration == update_alpha_mask_list[0]:
+                model.shrink(new_bb)
+                L1_reg_weight = 0
+            
 
         if iteration in upsample_list:
             # Get next voxel count in list
