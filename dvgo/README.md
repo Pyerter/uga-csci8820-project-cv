@@ -21,7 +21,7 @@ Do not forget to run python in an environment that has the requirements found in
 
 ## Contribution
 
-Some of the code from the [original implementation of DVGO](https://github.com/sunset1995/DirectVoxGO); however, much of the code was rewritten with the following qualities:
+Some of the code in this repository is from the [original implementation of DVGO](https://github.com/sunset1995/DirectVoxGO); however, much of the code was rewritten with the following qualities:
 
 - Reimplementation of all cuda and cpp in Python with PyTorch for greater portability
 - Rewriting, reorganization, documentation, and refactoring of code for better explainability
