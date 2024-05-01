@@ -181,13 +181,6 @@ def main():
         coarse_ckpt_path=BASE_PATH / "results" / args.object / "coarse_last.tar",
     )
 
-    # init enviroment
-    if torch.cuda.is_available():
-        torch.set_default_tensor_type("torch.cuda.FloatTensor")
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
-
     model, device = load_model(EXP_PATH / "fine_last.tar")
     render_and_save_views(data, model, device, EXP_PATH, args)
 
