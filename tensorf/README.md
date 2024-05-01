@@ -1,7 +1,4 @@
-# uga-csci8820-project-cv
-Group project for computer vision. We are researching NeRF techniques.
-
-## TensoRF
+# TensoRF
 
 ### Running Commands
 The key file that will be run in this project for TensoRF is the run_tensorf_synethic.py file. Here's a list of commands that can be run:  
